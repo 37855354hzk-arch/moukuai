@@ -1,0 +1,11 @@
+id: ignrkng
+name: mokuai
+version: 1.11.1
+author: grhtrbn
+icon: app.png
+desc: hrthjy
+files:
+  - hardware.py
+  - main.py
+  - mode_laser.py
+  - mode_rect.py

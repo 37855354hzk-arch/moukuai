@@ -9,25 +9,22 @@ import mode_laser # type: ignore
 
 CAM_W = 320
 CAM_H = 240
-FPS = 60
+FPS = 30
 CAM_BUFFERS = 1
-DROP_STALE_FRAMES = True
-DISPLAY_FPS = 12
+DISPLAY_FPS = 15
 DISPLAY_INTERVAL = 1.0 / DISPLAY_FPS
-FPS_REPORT_INTERVAL = 1.0
+FPS_EMA_ALPHA = 0.2
 
 cam = camera.Camera(CAM_W, CAM_H, fps=FPS, buff_num=CAM_BUFFERS)
 disp = display.Display()
 serial_dev = uart.UART('/dev/ttyS0', 115200)
-can_clear_camera_buffer = hasattr(cam, 'clear_buff')
 
-cam.exposure(600)
+cam.exposure(500)
 
 mode = 'rect'
 mode_rect.init_rect()
 next_display_time = time.monotonic()
-fps_report_time = time.monotonic()
-fps_frame_count = 0
+last_frame_time = None
 realtime_fps = 0.0
 
 
@@ -57,14 +54,21 @@ while not app.need_exit():
                 cam.exposure(400)
                 print('switch -> laser')
 
-    if DROP_STALE_FRAMES and can_clear_camera_buffer:
-        cam.clear_buff()
-
     frame = cam.read()
     if frame is None:
         continue
 
     now = time.monotonic()
+    if last_frame_time is not None:
+        frame_interval = now - last_frame_time
+        if frame_interval > 0:
+            instant_fps = 1.0 / frame_interval
+            if realtime_fps <= 0:
+                realtime_fps = instant_fps
+            else:
+                realtime_fps += FPS_EMA_ALPHA * (instant_fps - realtime_fps)
+    last_frame_time = now
+
     display_due, next_display_time = interval_due(now, next_display_time, DISPLAY_INTERVAL)
     frame_bgr = image.image2cv(frame, ensure_bgr=True, copy=False)
 
@@ -72,12 +76,3 @@ while not app.need_exit():
         mode_rect.step_rect(frame_bgr, serial_dev, disp, display_due, realtime_fps)
     else:
         mode_laser.step_laser(frame_bgr, serial_dev, disp, display_due, realtime_fps)
-
-    fps_frame_count += 1
-    report_now = time.monotonic()
-    report_elapsed = report_now - fps_report_time
-    if report_elapsed >= FPS_REPORT_INTERVAL:
-        realtime_fps = fps_frame_count / report_elapsed
-        print(f'FPS: {realtime_fps:.1f} | mode: {mode}')
-        fps_frame_count = 0
-        fps_report_time = report_now
